@@ -1947,15 +1947,30 @@
                         </div>
                     </div>
                     <div id="tab-data" class="admin-tab-pane hidden space-y-4">
-                        <h3 class="text-base text-black">Upload Stats (CSV or XLSX)</h3>
-                        <p class="text-xs text-black">Col A = Name. Accepts .csv and .xlsx files.</p>
+                        <h3 class="text-base text-black">📅 Monthly Upload (Dashboard Export)</h3>
+                        <p class="text-xs text-black" style="line-height:1.8;">Select the month, then drop in the whole export (select all files at once). Only the rep files are used: <b>breakdown_by_rep_2</b> (activity) and <b>breakdown_by_rep_1</b> (tNPS). Everything else is safely ignored.</p>
                         <div class="flex flex-wrap items-center gap-3">
-                            <input type="file" id="csvFileInput" accept=".csv,.xlsx,.xls"
+                            <input type="file" id="monthlyFileInput" accept=".csv,.xlsx,.xls" multiple
                                 class="text-xs text-black file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:bg-yellow-100 file:text-yellow-800 hover:file:bg-yellow-200">
-                            <input type="date" id="csvDateInput"
+                            <input type="month" id="monthlyMonthInput"
                                 class="p-2 rounded text-black bg-white border-2 border-black">
                         </div>
-                        <button id="uploadCsvBtn" class="btn-pixel" disabled>Upload &amp; Update XP</button>
+                        <button id="monthlyPreviewBtn" class="btn-pixel" disabled>Preview Monthly XP</button>
+                        <div id="monthlyPreviewBox" class="hidden text-xs text-black bg-white bg-opacity-70 p-3 rounded space-y-2" style="line-height:1.8;"></div>
+                        <hr class="border-dashed border-red-700">
+                        <details>
+                            <summary class="text-xs text-black"><span class="summary-arrow">▶</span> Legacy daily upload (old single-file format)</summary>
+                            <div class="space-y-3 mt-3">
+                                <p class="text-xs text-black">Col A = Name. Accepts .csv and .xlsx files.</p>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <input type="file" id="csvFileInput" accept=".csv,.xlsx,.xls"
+                                        class="text-xs text-black file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:bg-yellow-100 file:text-yellow-800 hover:file:bg-yellow-200">
+                                    <input type="date" id="csvDateInput"
+                                        class="p-2 rounded text-black bg-white border-2 border-black">
+                                </div>
+                                <button id="uploadCsvBtn" class="btn-pixel" disabled>Upload &amp; Update XP</button>
+                            </div>
+                        </details>
                         <hr class="border-dashed border-red-700">
                         <h3 class="text-base text-black">Backfill Monthly XP from Logs</h3>
                         <p class="text-xs text-black">Run this once to rebuild monthly XP snapshots from all existing
@@ -2145,9 +2160,8 @@
                             { name: "Alisha Alsop", color: "#ffe119" }, { name: "Angie Flores", color: "#4363d8" },
                             { name: "Caroline Molaski", color: "#f58231" }, { name: "James Puglisi", color: "#f032e6" },
                             { name: "Katie Sayer", color: "#bfef45" }, { name: "Mark Lawrence", color: "#469990" },
-                            { name: "Matt Crossan", color: "#dcbeff" }, { name: "Susan Reynolds", color: "#33a02c" },
-                            { name: "Whitney Sherwood", color: "#9A6324" }
-                        ]
+                            { name: "Matt Crossan", color: "#dcbeff" }, { name: "Susan Reynolds", color: "#33a02c" }
+                                                    ]
                     },
                     team_kilimanjaro: {
                         manager: 'Jonathon Quinnelly', color: '#8A2BE2',
@@ -2158,7 +2172,8 @@
                             { name: "Christine Tosti", color: "#33a02c" }, { name: "Jasmine Lewis", color: "#e31a1c" },
                             { name: "Jill Fisher", color: "#fdbf6f" }, { name: "Keila Arnaud", color: "#ff7f00" },
                             { name: "Kierra Ray", color: "#fabed4" }, { name: "Lexi Baeza", color: "#cab2d6" },
-                            { name: "Michael Caldwell", color: "#b15928" }, { name: "Tracey Smith", color: "#ffff99" }
+                            { name: "Michael Caldwell", color: "#b15928" }, { name: "Tracey Smith", color: "#ffff99" },
+                            { name: "Courtney Reed", color: "#b2df8a" }
                         ]
                     },
                     team_olympus: {
@@ -2166,11 +2181,15 @@
                         admins: [...new Set(['Khayla McGowan (she-her)', ...globalAdmins])],
                         members: [
                             { name: "Khayla McGowan", color: "#a6cee3" }, { name: "Alison Mullen", color: "#fb9a99" },
-                            { name: "Christian Cubias", color: "#911eb4" }, { name: "Cindy Miller", color: "#1f78b4" },
-                            { name: "Courtney Reed", color: "#b2df8a" }, { name: "Courtney Stringer", color: "#e31a1c" },
+                            { name: "Christian Cubias", color: "#911eb4" }, { name: "Courtney Stringer", color: "#e31a1c" },
                             { name: "Elizabeth Moeller", color: "#fdbf6f" }, { name: "Hannah Freedman", color: "#cab2d6" },
                             { name: "Jenny Manch", color: "#d9d9d9" }, { name: "Lauren Hughes", color: "#6a3d9a" },
-                            { name: "Maggie Jones", color: "#1f78b4" }, { name: "Nicole Huyser", color: "#ffff99" }
+                            { name: "Maggie Jones", color: "#1f78b4" }, { name: "Nicole Huyser", color: "#ffff99" },
+                            { name: "Taylor Farris", color: "#e6ab02" },
+                            { name: "Mary Lee", color: "#d95f02" },
+                            { name: "James O'Connor", color: "#ffff99" },
+                            { name: "Whitney Sherwood", color: "#9A6324" },
+                            { name: "Sam Wood", color: "#cab2d6" }
                         ]
                     },
                     team_everest: {
@@ -2180,9 +2199,10 @@
                             { name: "Megan Oliden", color: "#a6cee3" }, { name: "Blair Hailey", color: "#b2df8a" },
                             { name: "Gracie Dabney", color: "#33a02c" }, { name: "Ian Robinson", color: "#42d4f4" },
                             { name: "Izzy Norford", color: "#fb9a99" }, { name: "Kyle Johnson", color: "#fdb462" },
-                            { name: "Sam Wood", color: "#cab2d6" }, { name: "Shayla Casanova", color: "#6a3d9a" },
+                            { name: "Shayla Casanova", color: "#6a3d9a" },
                             { name: "Stacy Johnson", color: "#ffff99" }, { name: "Stephanie Chandler", color: "#bc80bd" },
-                            { name: "Susan Kang", color: "#ccebc5" }
+                            { name: "Susan Kang", color: "#ccebc5" },
+                            { name: "Cindy Miller", color: "#1f78b4" }
                         ]
                     },
                     team_vesuvius: {
@@ -2202,11 +2222,12 @@
                         admins: [...new Set(['Jennifer Johnson', ...globalAdmins])],
                         members: [
                             { name: "Jennifer Johnson", color: "#7fc97f" }, { name: "Enid Arellano", color: "#fdc086" },
-                            { name: "James O'Connor", color: "#ffff99" }, { name: "Jeff Durkin", color: "#386cb0" },
+                            { name: "Jeff Durkin", color: "#386cb0" },
                             { name: "Kaila Torpey", color: "#f0027f" }, { name: "Karen Hummer", color: "#bf5b17" },
                             { name: "Kari Gresham", color: "#666666" }, { name: "Karolyn Wenschlag", color: "#1b9e77" },
-                            { name: "Mary Lee", color: "#d95f02" }, { name: "Meghan Hughes", color: "#e7298a" },
-                            { name: "Morgan Fein", color: "#66a61e" }, { name: "Taylor Farris", color: "#e6ab02" }
+                            { name: "Meghan Hughes", color: "#e7298a" },
+                            { name: "Morgan Fein", color: "#66a61e" },
+                            { name: "Ryan Jervis", color: "#a6761d" }
                         ]
                     },
                     team_denali: {
@@ -2219,7 +2240,8 @@
                             { name: "John Randall", color: "#a65628" }, { name: "Kelly Patterson", color: "#f781bf" },
                             { name: "Mallory Zumstein", color: "#999999" }, { name: "Matt Harwood", color: "#66c2a5" },
                             { name: "Mellissa Aguirre", color: "#fc8d62" }, { name: "Nathalie Aidarous", color: "#8da0cb" },
-                            { name: "Nikki Pike", color: "#e78ac3" }, { name: "Rachel Dodd", color: "#a6d854" }
+                            { name: "Nikki Pike", color: "#e78ac3" }, { name: "Rachel Dodd", color: "#a6d854" },
+                            { name: "Miryana Loignon", color: "#b3b3b3" }
                         ]
                     }
                 },
@@ -2248,7 +2270,7 @@
                 { id: 'level_5', name: 'Level 5', emoji: '🍄', condition: (p) => (p.level || 1) >= 5 },
                 { id: 'level_10', name: 'Level 10', emoji: '🔥', condition: (p) => (p.level || 1) >= 10 },
                 { id: 'xp_1000', name: '1000 XP', emoji: '💎', condition: (p) => (p.xp || 0) >= 1000 },
-                { id: 'top_player', name: 'No. 1', emoji: '👑', condition: (p, all) => all[0] && all[0].name === p.name && (p.xp || 0) > 0 },
+                { id: 'top_player', name: 'No. 1', emoji: '👑', condition: (p, all) => all[0] && all[0].name === p.name && (p.xp || 0) > 0 }
             ];
             const getInitials = name => { if (!name) return ''; const p = name.trim().split(' '); return p.length > 1 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.substring(0, 2).toUpperCase(); };
             const normName = s => s.split('(')[0].trim().toLowerCase();
@@ -3229,7 +3251,7 @@
             }
             function renderAdminPanel() {
                 el.adminPanel.classList.toggle('hidden', !state.isAdmin); if (!state.isAdmin) return;
-                el.resetDataBtn.disabled = !state.isDataReady; el.uploadCsvBtn.disabled = !state.isDataReady;
+                el.resetDataBtn.disabled = !state.isDataReady; el.uploadCsvBtn.disabled = !state.isDataReady; const mpb = document.getElementById('monthlyPreviewBtn'); if (mpb) mpb.disabled = !state.isDataReady;
                 renderAdminSubPanels(); renderSpotlightAdminTab(); renderEventsAdminTab();
                 const soSel = document.getElementById('seasonOverrideSelect'); if (soSel) soSel.value = state.gameData.seasonOverride || '';
             }
@@ -3372,8 +3394,8 @@
                         source.seasonOverride = existingData.seasonOverride !== undefined ? existingData.seasonOverride : null;
                         source.skills = existingData.skills && existingData.skills.length ? existingData.skills : source.skills;
                         source.monthlyQuests = existingData.monthlyQuests && existingData.monthlyQuests.length ? existingData.monthlyQuests : source.monthlyQuests;
-                        const existingTeamNames = Object.values(existingData.teams || {}).flatMap(t => (t.members || []).map(m => m.name)).sort().join(',');
-                        const sourceTeamNames = Object.values(source.teams).flatMap(t => (t.members || []).map(m => m.name)).sort().join(',');
+                        const existingTeamNames = Object.entries(existingData.teams || {}).flatMap(([k, t]) => (t.members || []).map(m => k + ':' + m.name)).sort().join(',');
+                        const sourceTeamNames = Object.entries(source.teams).flatMap(([k, t]) => (t.members || []).map(m => k + ':' + m.name)).sort().join(',');
                         if (existingTeamNames !== sourceTeamNames) {
                             await setDoc(dataDocRef, source); state.gameData = source; showNotification("Team roster updated.", "success");
                         } else {
@@ -3451,7 +3473,7 @@
                     const name = file.name.toLowerCase(); const isXlsx = name.endsWith('.xlsx') || name.endsWith('.xls');
                     const reader = new FileReader();
                     if (isXlsx) { reader.onload = e => { try { const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' }); resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })); } catch (err) { reject(err); } }; reader.onerror = reject; reader.readAsArrayBuffer(file); }
-                    else { reader.onload = e => { try { let text = e.target.result; if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); resolve(text.split(/\r\n|\n/).filter(l => l.trim()).map(line => line.split(',').map(f => f.trim().replace(/^"|"$/g, '').trim()))); } catch (err) { reject(err); } }; reader.onerror = reject; reader.readAsText(file); }
+                    else { reader.onload = e => { try { resolve(parseCsvText(e.target.result)); } catch (err) { reject(err); } }; reader.onerror = reject; reader.readAsText(file); }
                 });
             }
             async function handleCsvUpload() {
@@ -3513,6 +3535,165 @@
                 } catch (err) { showNotification('Upload Error: ' + err.message, "error"); console.error(err); }
                 finally { el.csvFileInput.value = ''; }
             }
+            /* ── MONTHLY DASHBOARD EXPORT UPLOAD ── */
+            // Quote-aware CSV parser: handles "1,110" style numbers and blank cells.
+            function parseCsvText(text) {
+                if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+                const rows = []; let row = [], field = '', inQ = false;
+                for (let i = 0; i < text.length; i++) {
+                    const c = text[i];
+                    if (inQ) {
+                        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+                        else field += c;
+                    } else if (c === '"') inQ = true;
+                    else if (c === ',') { row.push(field.trim()); field = ''; }
+                    else if (c === '\n' || c === '\r') {
+                        if (c === '\r' && text[i + 1] === '\n') i++;
+                        row.push(field.trim()); field = '';
+                        if (row.some(f => f !== '')) rows.push(row); row = [];
+                    } else field += c;
+                }
+                row.push(field.trim()); if (row.some(f => f !== '')) rows.push(row);
+                return rows;
+            }
+            const MONTHLY_NAME_MAP = { "Matthew Harwood": "Matt Harwood", "Melissa McMaster": "Mel McMaster", "Alexander Williams": "Alex Williams", "Alexa Baeza": "Lexi Baeza", "Matthew Crossan": "Matt Crossan" };
+            const AVAIL_THRESHOLD = 65;
+            const numOrNull = v => { const s = String(v == null ? '' : v).replace(/[,%\s]/g, ''); if (s === '') return null; const n = parseFloat(s); return isNaN(n) ? null : n; };
+            const num = v => numOrNull(v) || 0;
+            // Identify an export file by its header row, not its file name.
+            function classifyExportRows(rows) {
+                const header = (rows[0] || []).map(h => String(h).trim());
+                const has = h => header.indexOf(h) !== -1;
+                if (has('Agent Employee Name') && has('Care Team Activity Handled Contacts')) return 'activity';
+                if (has('Employee Name') && has('Promoter Count')) return 'tnps';
+                return null;
+            }
+            function rowsToObjects(rows) {
+                const header = rows[0].map(h => String(h).trim());
+                return rows.slice(1).map(r => { const o = {}; header.forEach((h, i) => { o[h] = r[i] !== undefined ? String(r[i]).trim() : ''; }); return o; });
+            }
+            // Build one record per rep from the activity export.
+            // The export repeats a rep once per skill AND once per availability window,
+            // so rows are de-duplicated per (name, skill) before summing across skills.
+            function aggregateActivity(objs) {
+                const reps = {};
+                objs.forEach(o => {
+                    const name = (o['Agent Employee Name'] || '').trim(); const skill = (o['Agent Revenue Team Skill'] || '').trim();
+                    if (!name || skill === 'Managers') return;
+                    const r = reps[name] || (reps[name] = { name, crew: '', skills: {}, avail: [] });
+                    if (o['Agent Crew']) r.crew = o['Agent Crew'];
+                    if (!r.skills[skill]) {
+                        r.skills[skill] = {
+                            fteDays: num(o['Interaction Detail FTE Days']),
+                            inbound: num(o['Interaction Detail Unique Inbound Calls Handled']),
+                            outbound: num(o['Interaction Detail Unique Outbound Calls Handled']),
+                            chats: num(o['Interaction Detail Customer Chats Handled']),
+                            emails: num(o['Interaction Detail Outbound SF Case Emails']),
+                            problems: num(o['Order Action Detail Total Problems Resolved'])
+                        };
+                    }
+                    const key = [o['Agent Availability Phone Availability %'], o['Agent Availability Chat Availability %'], o['Agent Availability Phone Logged In (hours)']].join('|');
+                    if (!r.avail.some(a => a.key === key)) r.avail.push({ key, phone: numOrNull(o['Agent Availability Phone Availability %']), chat: numOrNull(o['Agent Availability Chat Availability %']), hours: num(o['Agent Availability Phone Logged In (hours)']) });
+                });
+                return Object.values(reps).map(r => {
+                    const t = { fteDays: 0, inbound: 0, outbound: 0, chats: 0, emails: 0, problems: 0 };
+                    Object.values(r.skills).forEach(s => Object.keys(t).forEach(k => t[k] += s[k]));
+                    // Hours-weighted availability; uses the better of phone or chat so chat-only reps qualify too.
+                    const wAvg = field => { const pts = r.avail.filter(a => a[field] !== null); if (!pts.length) return null; const w = pts.reduce((s, a) => s + (a.hours || 0), 0); return w > 0 ? pts.reduce((s, a) => s + a[field] * (a.hours || 0), 0) / w : pts.reduce((s, a) => s + a[field], 0) / pts.length; };
+                    const phone = wAvg('phone'), chat = wAvg('chat');
+                    const bestAvail = Math.max(phone || 0, chat || 0);
+                    return Object.assign({ name: r.name, crew: r.crew, phoneAvail: phone, chatAvail: chat, bestAvail }, t);
+                });
+            }
+            function buildMonthlySkills(rep, promoters) {
+                const out = [];
+                const cc = rep.inbound + rep.outbound + rep.chats; if (cc > 0) out.push({ name: "Call/Chat Handled", count: cc });
+                if (rep.emails > 0) out.push({ name: "Email Responded To", count: rep.emails });
+                if (rep.problems > 0) out.push({ name: "Problem Touches", count: rep.problems });
+                // One availability credit per worked day, matching the old daily-upload economy.
+                if (rep.bestAvail >= AVAIL_THRESHOLD && rep.fteDays > 0) out.push({ name: "Call + Talk Availability", count: rep.fteDays });
+                if (promoters > 0) out.push({ name: "WOW Feedback", count: promoters });
+                return out;
+            }
+            function findPlayer(gd, playerName) {
+                const target = normName(playerName);
+                for (const key in gd.teams) { const idx = (gd.teams[key].members || []).findIndex(p => normName(p.name) === target); if (idx !== -1) return { key, idx }; }
+                return null;
+            }
+            let pendingMonthly = null;
+            async function previewMonthlyUpload() {
+                const files = Array.from(document.getElementById('monthlyFileInput').files || []);
+                const monthKey = document.getElementById('monthlyMonthInput').value;
+                const box = document.getElementById('monthlyPreviewBox');
+                if (!files.length) { showNotification("Select the export files.", "error"); return; }
+                if (!/^\d{4}-\d{2}$/.test(monthKey)) { showNotification("Pick the month these stats are for.", "error"); return; }
+                let activity = null, tnps = null; const ignored = [];
+                for (const f of files) {
+                    try { const rows = await parseFileToRows(f); const kind = classifyExportRows(rows); if (kind === 'activity') activity = rowsToObjects(rows); else if (kind === 'tnps') tnps = rowsToObjects(rows); else ignored.push(f.name); }
+                    catch (e) { ignored.push(f.name + ' (unreadable)'); }
+                }
+                if (!activity) { showNotification("Couldn't find the rep activity file (breakdown_by_rep_2).", "error"); return; }
+                const promoterMap = {};
+                (tnps || []).forEach(o => { const n = (o['Employee Name'] || '').trim(); if (n) promoterMap[MONTHLY_NAME_MAP[n] || n] = num(o['Promoter Count']); });
+                const skillMap = new Map((state.gameData.skills || []).map(s => [s.name, s.xp]));
+                const results = [], unmatched = [];
+                aggregateActivity(activity).forEach(rep => {
+                    const playerName = MONTHLY_NAME_MAP[rep.name] || rep.name;
+                    const skills = buildMonthlySkills(rep, promoterMap[playerName] || 0);
+                    if (!skills.length) return;
+                    const xp = skills.reduce((s, sk) => s + (skillMap.get(sk.name) || 0) * sk.count, 0);
+                    const hit = findPlayer(state.gameData, playerName);
+                    if (!hit) { unmatched.push(rep.name + (rep.crew ? ' (' + rep.crew + ')' : '')); return; }
+                    results.push({ name: state.gameData.teams[hit.key].members[hit.idx].name, xp, skills });
+                });
+                results.sort((a, b) => b.xp - a.xp);
+                const [y, m] = monthKey.split('-').map(Number);
+                const monthLabel = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                // Duplicate guards: a monthly upload already done, or older daily uploads already counted for this month.
+                const alreadyMonthly = state.activityLog.some(l => l.details && l.details.indexOf('Monthly Upload for ' + monthKey) !== -1);
+                const dailyThisMonth = state.activityLog.filter(l => { if (!l.details || l.details.indexOf('CSV Upload by') === -1 || l.details.indexOf(' for date ') === -1) return false; const d = l.timestamp && l.timestamp.toDate ? l.timestamp.toDate() : null; return d && getMonthKey(d) === monthKey; }).length;
+                const totalXp = results.reduce((s, r) => s + r.xp, 0);
+                const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                let html = '<div><b>' + esc(monthLabel) + '</b>: ' + results.length + ' players, +' + totalXp.toLocaleString() + ' XP total.</div>';
+                html += '<div>Files used: activity ✅ · tNPS ' + (tnps ? '✅ (promoters → WOW Feedback)' : '➖ not included') + (ignored.length ? ' · ' + ignored.length + ' other files ignored' : '') + '</div>';
+                if (alreadyMonthly) html += '<div style="color:#b91c1c;"><b>⚠️ ' + esc(monthLabel) + ' was already uploaded.</b> Confirming will add the XP a second time.</div>';
+                if (dailyThisMonth) html += '<div style="color:#b91c1c;"><b>⚠️ ' + dailyThisMonth + ' daily upload(s) already exist for ' + esc(monthLabel) + '.</b> Monthly totals would double count those days.</div>';
+                html += '<div><b>Top 5:</b> ' + results.slice(0, 5).map(r => esc(r.name) + ' +' + r.xp.toLocaleString()).join(' · ') + '</div>';
+                if (unmatched.length) html += '<div><b>Not on any team (skipped):</b> ' + unmatched.map(esc).join(', ') + '</div>';
+                html += '<div class="flex gap-2 pt-1"><button id="monthlyConfirmBtn" class="btn-pixel !bg-green-500 !border-green-700">Confirm Upload</button><button id="monthlyCancelBtn" class="btn-pixel !bg-gray-500 !border-gray-700">Cancel</button></div>';
+                box.innerHTML = html; box.classList.remove('hidden');
+                pendingMonthly = { monthKey, monthLabel, results, totalXp };
+                document.getElementById('monthlyConfirmBtn').addEventListener('click', commitMonthlyUpload);
+                document.getElementById('monthlyCancelBtn').addEventListener('click', () => { pendingMonthly = null; box.classList.add('hidden'); });
+            }
+            async function commitMonthlyUpload() {
+                if (!pendingMonthly) return; const p = pendingMonthly; pendingMonthly = null;
+                const box = document.getElementById('monthlyPreviewBox');
+                const [y, m] = p.monthKey.split('-').map(Number);
+                const statsDate = new Date(Date.UTC(y, m, 0, 12)); // last day of the month, noon UTC
+                const by = state.currentUser ? state.currentUser.displayName : 'Admin';
+                try {
+                    const updated = await runTransaction(db, async tx => {
+                        const snap = await tx.get(dataDocRef); if (!snap.exists()) throw new Error("No data.");
+                        const gd = snap.data(); let count = 0;
+                        p.results.forEach(r => {
+                            const hit = findPlayer(gd, r.name); if (!hit) return;
+                            const mem = gd.teams[hit.key].members[hit.idx];
+                            mem.xp = (mem.xp || 0) + r.xp; if (!mem.monthlyXp) mem.monthlyXp = {};
+                            mem.monthlyXp[p.monthKey] = (mem.monthlyXp[p.monthKey] || 0) + r.xp; count++;
+                        });
+                        if (count) tx.update(dataDocRef, { teams: recalculatePlayerStats(gd).teams }); return count;
+                    });
+                    // Log format matches the legacy uploads so charts, tallies and the "Uploaded Only" filter keep working.
+                    await addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + ' (Monthly Upload for ' + p.monthKey + '). Updated ' + updated + ' players, +' + p.totalXp + ' XP.', timestamp: Timestamp.fromDate(statsDate) });
+                    await Promise.all(p.results.map(r => addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + ' for ' + r.name + ': ' + r.skills.map(s => s.count + 'x "' + s.name + '"').join(', ') + ' (+' + r.xp + ' XP)', timestamp: Timestamp.fromDate(statsDate) })));
+                    showNotification('✅ ' + p.monthLabel + ' uploaded! ' + updated + ' players, +' + p.totalXp.toLocaleString() + ' XP.', 'success');
+                    addToTicker('📊 ' + p.monthLabel + ' stats are in! +' + p.totalXp.toLocaleString() + ' XP across the world!');
+                    state.chartFilter = 'month'; state.chartFilterMonth = m - 1; state.chartFilterYear = y;
+                    state.lbFilter = p.monthKey; renderLbFilterBar(); if (state.selectedPlayerName) renderPlayerDashboard();
+                    box.classList.add('hidden'); document.getElementById('monthlyFileInput').value = '';
+                } catch (err) { showNotification('Upload Error: ' + err.message, 'error'); console.error(err); }
+            }
             function exportDataToCsv() {
                 if (!state.isDataReady) return; let csv = "Team,Player Name,XP,Level,Coins\r\n";
                 Object.values(state.gameData.teams || {}).forEach(team => { const label = team.manager + "'s Team"; (team.members || []).forEach(p => { csv += '"' + label.replace(/"/g, '""') + '","' + p.name.replace(/"/g, '""') + '",' + (p.xp || 0) + ',' + (p.level || 1) + ',' + (p.coins || 0) + '\r\n'; }); });
@@ -3559,6 +3740,8 @@
                 el.cancelResetBtn.addEventListener('click', () => el.resetConfirmModal.style.display = 'none');
                 el.csvFileInput.addEventListener('change', () => { const file = el.csvFileInput.files[0]; if (!file) return; const match = file.name.match(/(\d{4}-\d{2}-\d{2})/); el.csvDateInput.value = match ? match[1] : new Date().toISOString().slice(0, 10); });
                 el.uploadCsvBtn.addEventListener('click', handleCsvUpload);
+                document.getElementById('monthlyPreviewBtn').addEventListener('click', previewMonthlyUpload);
+                (function () { const mi = document.getElementById('monthlyMonthInput'); if (mi && !mi.value) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); mi.value = getMonthKey(d); } })();
                 el.confirmCsvBtn.addEventListener('click', () => { el.csvConfirmModal.style.display = 'none'; processCsvFile(); });
                 el.cancelCsvBtn.addEventListener('click', () => el.csvConfirmModal.style.display = 'none');
                 el.exportLogBtn.addEventListener('click', exportLogToCsv);
