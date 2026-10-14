@@ -2320,7 +2320,7 @@
                 chartFilterYear: new Date().getFullYear(),
                 seasonOverride: null,
                 lbFilter: getCurrentMonthKey(),
-                dataSourceFilter: 'all',
+                dataSourceFilter: 'all', channelFilter: 'all',
                 gameData: { teams: {}, skills: [], monthlyQuests: [], globalAdmins: [], activeEvent: null, activeTeamVsTeamEvents: [] }
             };
             let unsubscribeFromData = null, unsubscribeFromLog = null;
@@ -2825,6 +2825,19 @@
                 } catch (err) { console.error('Checkpoint error:', err); }
             }
             async function applySeasonOverride() { const val = (document.getElementById('seasonOverrideSelect') || {}).value || ''; await updateDoc(dataDocRef, { seasonOverride: val === '' ? null : val }); showNotification('Season theme updated!', 'success'); }
+            /* ── Channel sub-filters within a team (one team, filterable by channel) ── */
+            const TEAM_CHANNELS = {
+                team_olympus: {
+                    voice: { label: '🎧 Voice', members: ["Christian Cubias", "Courtney Stringer", "James O'Connor", "Jonathon Quinnelly", "Kelly Patterson", "Mary Lee", "Matt Harwood", "Mellissa Aguirre", "Whitney Sherwood"] },
+                    chat: { label: '💬 Chat', members: ["Alison Mullen", "Blair Hailey", "Lauren Hughes", "Maggie Jones", "Michael Lombardo", "Rachel Dodd"] }
+                }
+            };
+            function getChannelMembers(teamKey, members) {
+                const ch = TEAM_CHANNELS[teamKey]; const f = state.channelFilter;
+                if (!ch || !f || f === 'all' || !ch[f]) return members || [];
+                const set = new Set(ch[f].members.map(n => n.toLowerCase()));
+                return (members || []).filter(m => set.has(m.name.toLowerCase()));
+            }
             function renderLbFilterBar() {
                 if (!el.lbFilterBar) return; el.lbFilterBar.innerHTML = '';
                 const now = new Date(); const year = now.getFullYear();
@@ -2835,6 +2848,14 @@
                     const key = year + '-' + String(m + 1).padStart(2, '0'); const btn = document.createElement('button');
                     btn.className = 'lb-filter-btn' + (state.lbFilter === key ? ' active' : ''); btn.textContent = monthNames[m];
                     btn.addEventListener('click', () => { state.lbFilter = key; renderLbFilterBar(); renderLeaderboard(); renderTextLeaderboard(); }); el.lbFilterBar.appendChild(btn);
+                }
+                const channels = TEAM_CHANNELS[state.currentView];
+                if (channels) {
+                    const sep = document.createElement('span'); sep.style.cssText = 'width:100%;height:0;'; el.lbFilterBar.appendChild(sep);
+                    [['all', '👥 All']].concat(Object.entries(channels).map(([k, v]) => [k, v.label])).forEach(([k, label]) => {
+                        const cb = document.createElement('button'); cb.className = 'data-source-toggle' + ((state.channelFilter || 'all') === k ? ' active' : ''); cb.textContent = label;
+                        cb.addEventListener('click', () => { state.channelFilter = k; renderLbFilterBar(); renderLeaderboard(); renderTextLeaderboard(); }); el.lbFilterBar.appendChild(cb);
+                    });
                 }
             }
             function renderNavigation() {
@@ -2868,7 +2889,7 @@
                 if (el.castleLevelLabel) el.castleLevelLabel.textContent = castle.label;
                 const displayData = (state.currentView === 'overall')
                     ? Object.values(state.gameData.teams).map(team => { const fx = getTeamXpForPeriod(team, state.lbFilter); return { name: team.manager, xp: fx, level: getManagerLevelFromXp(fx), color: team.color, members: team.members, streakCount: 0, equippedItems: {}, spotlightActive: false, badges: [] }; })
-                    : ((state.gameData.teams[state.currentView] || {}).members || []).map(p => Object.assign({}, p, { xp: getPlayerXpForPeriod(p, state.lbFilter) }));
+                    : getChannelMembers(state.currentView, (state.gameData.teams[state.currentView] || {}).members).map(p => Object.assign({}, p, { xp: getPlayerXpForPeriod(p, state.lbFilter) }));
                 const sortedForCrown = [...displayData].sort((a, b) => (b.xp || 0) - (a.xp || 0));
                 displayData.forEach(player => {
                     const charEl = document.createElement('div'); charEl.className = 'character'; charEl.style.backgroundColor = player.color || '#cccccc';
@@ -2919,9 +2940,9 @@
                     });
                     el.textLeaderboard.appendChild(list);
                 } else {
-                    const team = teams[state.currentView]; el.leaderboardTitle.textContent = team ? '⛰️ ' + team.manager + "'s Team — " + periodLabel : 'Team Leaderboard';
+                    const team = teams[state.currentView]; const chDef = (TEAM_CHANNELS[state.currentView] || {})[state.channelFilter]; el.leaderboardTitle.textContent = team ? '⛰️ ' + team.manager + "'s Team" + (chDef ? ' (' + chDef.label + ')' : '') + ' — ' + periodLabel : 'Team Leaderboard';
                     if (!team) { el.textLeaderboard.innerHTML = '<p>No team data.</p>'; return; }
-                    const sorted = [...(team.members || [])].map(m => Object.assign({}, m, { filteredXp: getPlayerXpForPeriod(m, state.lbFilter) })).sort((a, b) => b.filteredXp - a.filteredXp);
+                    const sorted = [...getChannelMembers(state.currentView, team.members)].map(m => Object.assign({}, m, { filteredXp: getPlayerXpForPeriod(m, state.lbFilter) })).sort((a, b) => b.filteredXp - a.filteredXp);
                     const list = document.createElement('ol'); list.className = 'list-decimal list-inside space-y-3';
                     sorted.forEach(player => {
                         const xpNext = getXpForLevel((player.level || 1) + 1); const prog = Math.min(player.filteredXp > 0 ? (player.filteredXp / xpNext) * 100 : 0, 100);
@@ -3708,7 +3729,7 @@
                 el.signInBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()).catch(err => showNotification('Sign-In Failed: ' + err.message, "error")));
                 el.signOutBtn.addEventListener('click', () => signOut(auth));
                 el.soundToggleBtn.addEventListener('click', () => { state.soundEnabled = !state.soundEnabled; el.soundToggleBtn.textContent = state.soundEnabled ? '🔊 Sound' : '🔇 Sound'; el.soundToggleBtn.classList.toggle('!bg-purple-500', state.soundEnabled); el.soundToggleBtn.classList.toggle('!bg-gray-500', !state.soundEnabled); });
-                el.teamNav.addEventListener('click', e => { const btn = e.target.closest('[data-view]'); if (btn) { state.currentView = btn.dataset.view; checkAdminAccess(); renderAll(); } });
+                el.teamNav.addEventListener('click', e => { const btn = e.target.closest('[data-view]'); if (btn) { state.currentView = btn.dataset.view; state.channelFilter = 'all'; checkAdminAccess(); renderAll(); } });
                 el.nameDropdown.addEventListener('change', e => { state.selectedPlayerName = e.target.value || null; checkAdminAccess(); renderPlayerSpecificContent(); });
                 el.skillsContainer.addEventListener('click', async e => { const btn = e.target.closest('.quick-add-btn'); if (btn) { playSound(el.coinSound); await logXpForPlayer(state.selectedPlayerName, [{ name: btn.dataset.skillName, xp: parseInt(btn.dataset.skillXp, 10), count: 1 }], 'Quick-add by ' + state.selectedPlayerName, new Date()); } });
                 el.adminModeBtn.addEventListener('click', () => { if (state.isAdmin) { state.isAdmin = false; el.adminModeBtn.textContent = 'Admin Mode'; el.adminModeBtn.classList.remove('!bg-green-500', '!border-green-700'); el.adminModeBtn.classList.add('!bg-red-500', '!border-red-700'); renderAdminPanel(); renderPlayerSpecificContent(); } else { el.passwordInput.value = ''; el.passwordModal.style.display = 'flex'; } });
