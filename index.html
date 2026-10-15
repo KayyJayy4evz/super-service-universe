@@ -1963,6 +1963,9 @@
                             class="text-xs text-black file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:bg-yellow-100 file:text-yellow-800 hover:file:bg-yellow-200">
                         <button id="monthlyPreviewBtn" class="btn-pixel" disabled>Preview XP</button>
                         <div id="monthlyPreviewBox" class="hidden text-xs text-black bg-white bg-opacity-70 p-3 rounded space-y-2" style="line-height:1.8;"></div>
+                        <h3 class="text-base text-black">🛟 Upload Backups</h3>
+                        <p class="text-xs text-black" style="line-height:1.8;">Saved automatically before every upload. Restoring puts everyone's XP, coins and items back to that moment, so anything earned since (spotlights, spins, shop) is undone too.</p>
+                        <div id="backupList" class="space-y-1"></div>
                         <hr class="border-dashed border-red-700">
                         <details>
                             <summary class="text-xs text-black"><span class="summary-arrow">▶</span> Legacy daily upload (old single-file format)</summary>
@@ -3692,17 +3695,20 @@
             // XP previously uploaded for this period, per player, so a re-upload REPLACES instead of stacking.
             // New-style uploads are tracked on each member (uploadXp). Older uploads for a month are found in the activity log.
             async function findPriorUploads(period) {
-                const prior = {}; const logRefs = []; let weeklyInMonth = 0;
+                const prior = {}; const logDocs = []; let weeklyInMonth = 0;
                 Object.values(state.gameData.teams || {}).forEach(t => (t.members || []).forEach(m => { const u = (m.uploadXp || {})[period.key]; if (u && u.xp) prior[m.name] = { xp: u.xp, month: u.month }; }));
                 let qs;
                 if (period.type === 'month') qs = await getDocs(query(activityLogCollection, where('timestamp', '>=', Timestamp.fromDate(period.start)), where('timestamp', '<', Timestamp.fromDate(period.end))));
                 else { const d = period.statsDate; qs = await getDocs(query(activityLogCollection, where('timestamp', '>=', Timestamp.fromDate(new Date(d.getTime() - 86400000))), where('timestamp', '<=', Timestamp.fromDate(new Date(d.getTime() + 86400000))))); }
                 qs.docs.forEach(docSnap => {
-                    const det = (docSnap.data().details || ''); if (det.indexOf('CSV Upload by') !== 0) return;
+                    const data = docSnap.data(); const det = (data.details || '');
                     const tag = det.match(/\[period:([^\]]+)\]/);
-                    if (tag) { if (tag[1] === period.key) logRefs.push(docSnap.ref); else if (period.type === 'month' && tag[1].indexOf('W:') === 0) weeklyInMonth++; return; }
+                    const keep = () => logDocs.push({ ref: docSnap.ref, details: det, timestamp: data.timestamp });
+                    if (det.indexOf('🚀 Most Improved') === 0) { if (tag && tag[1] === period.key) keep(); return; }
+                    if (det.indexOf('CSV Upload by') !== 0) return;
+                    if (tag) { if (tag[1] === period.key) keep(); else if (period.type === 'month' && tag[1].indexOf('W:') === 0) weeklyInMonth++; return; }
                     if (period.type !== 'month') return; // untagged (older) uploads are only replaced by a month upload
-                    logRefs.push(docSnap.ref);
+                    keep();
                     const m = det.match(/ for ([^:]+): .*\(\+(\d+) XP\)$/);
                     if (!m) return;
                     const hit = findPlayer(state.gameData, m[1].trim()); if (!hit) return;
@@ -3711,10 +3717,29 @@
                     prior[mem.name] = prior[mem.name] || { xp: 0, month: period.monthKey, legacy: true };
                     prior[mem.name].xp += parseInt(m[2], 10);
                 });
-                return { prior, logRefs, weeklyInMonth };
+                return { prior, logDocs, weeklyInMonth };
+            }
+            /* ── Name matching for skipped reps (remembered in the database) ── */
+            const SKIP_ALWAYS = '__skip__';
+            let aliasPicks = {}; // this preview session's choices: export name -> player name | SKIP_ALWAYS
+            function resolveExportName(raw) {
+                if (aliasPicks[raw] !== undefined) return aliasPicks[raw];
+                const saved = (state.gameData.nameAliases || {})[raw]; if (saved) return saved;
+                return MONTHLY_NAME_MAP[raw] || raw;
+            }
+            function playerOptionsHtml(selected) {
+                const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                let h = '<option value="">Skip this time</option><option value="' + SKIP_ALWAYS + '"' + (selected === SKIP_ALWAYS ? ' selected' : '') + '>🚫 Always skip</option>';
+                Object.entries(state.gameData.teams || {}).forEach(([k, t]) => {
+                    h += '<optgroup label="' + esc((k.split('_')[1] || k).replace(/^./, c => c.toUpperCase())) + '">';
+                    (t.members || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(m => { h += '<option value="' + esc(m.name) + '"' + (selected === m.name ? ' selected' : '') + '>' + esc(m.name) + '</option>'; });
+                    h += '</optgroup>';
+                });
+                return h;
             }
             let pendingUpload = null;
-            async function previewMonthlyUpload() {
+            async function previewMonthlyUpload(keepPicks) {
+                if (keepPicks !== true) aliasPicks = {};
                 const files = Array.from(document.getElementById('monthlyFileInput').files || []);
                 const period = uploadPeriodFromInputs();
                 const box = document.getElementById('monthlyPreviewBox');
@@ -3727,15 +3752,16 @@
                 }
                 if (!activity) { showNotification("Couldn't find the rep activity file (breakdown_by_rep_2).", "error"); return; }
                 const surveys = {};
-                (tnps || []).forEach(o => { const n = (o['Employee Name'] || '').trim(); if (n) surveys[MONTHLY_NAME_MAP[n] || n] = { score: numOrNull(o['tNPS Score']), responses: num(o['Response Count']), promoters: num(o['Promoter Count']), detractors: num(o['Detractor Count']) }; });
+                (tnps || []).forEach(o => { const n = (o['Employee Name'] || '').trim(); if (n) surveys[resolveExportName(n)] = { score: numOrNull(o['tNPS Score']), responses: num(o['Response Count']), promoters: num(o['Promoter Count']), detractors: num(o['Detractor Count']) }; });
                 const repAgg = aggregateActivity(activity);
                 const channelTnps = buildChannelTnps(tnpsChannel, repAgg, surveys);
                 const skillMap = new Map(ensureRequiredSkills(state.gameData.skills).list.map(s => [s.name, s.xp]));
-                const results = [], unmatched = [];
+                const results = [], unmatched = []; let alwaysSkipped = 0;
                 repAgg.forEach(rep => {
-                    const playerName = MONTHLY_NAME_MAP[rep.name] || rep.name;
+                    const playerName = resolveExportName(rep.name);
+                    if (playerName === SKIP_ALWAYS) { alwaysSkipped++; return; }
                     const hit = findPlayer(state.gameData, playerName);
-                    if (!hit) { unmatched.push(rep.name + (rep.crew ? ' (' + rep.crew + ')' : '')); return; }
+                    if (!hit) { unmatched.push(rep); return; }
                     const skills = buildUploadSkills(rep, surveys[playerName], hit.key, period.type === 'week', channelTnps);
                     if (!skills.length) return;
                     const xp = skills.reduce((s, sk) => s + (skillMap.get(sk.name) || 0) * sk.count, 0);
@@ -3752,19 +3778,60 @@
                 if (priorTotal > 0) html += '<div style="color:#92400e;"><b>♻️ Replacing earlier uploads:</b> ' + Object.keys(priorInfo.prior).length + ' players had ' + priorTotal.toLocaleString() + ' uploaded XP for this period. That XP is removed and swapped for the new totals (net ' + (totalXp - priorTotal >= 0 ? '+' : '') + (totalXp - priorTotal).toLocaleString() + ' XP). Spotlights, spins and manual awards are untouched.</div>';
                 if (priorInfo.weeklyInMonth) html += '<div style="color:#b91c1c;"><b>⚠️ Weekly uploads already exist inside ' + esc(period.label) + '.</b> A monthly upload on top of them would double count. Re-upload by week instead, or cancel.</div>';
                 html += '<div><b>Top 5:</b> ' + results.slice(0, 5).map(r => esc(r.name) + ' +' + r.xp.toLocaleString()).join(' · ') + '</div>';
-                if (unmatched.length) html += '<div><b>Not on any team (skipped):</b> ' + unmatched.map(esc).join(', ') + '</div>';
+                if (period.type === 'month') html += '<div>🚀 Most Improved is picked per team when you confirm (needs last month uploaded under this system).</div>';
+                html += '<div>🛟 A backup of everyone\'s XP is saved first. Restore it from <b>Upload Backups</b> below if anything looks wrong.</div>';
+                if (unmatched.length) {
+                    html += '<div class="pt-1"><b>Not matched to a player (' + unmatched.length + '):</b> pick who they are, or skip. Choices are remembered for future uploads.</div><div class="space-y-1">';
+                    unmatched.forEach(rep => { html += '<div class="flex flex-wrap items-center gap-2"><span style="min-width:180px;">' + esc(rep.name) + (rep.crew ? ' <span style="color:#555;">(' + esc(rep.crew) + ')</span>' : '') + '</span><select class="alias-pick bg-white text-black p-1 rounded border-2 border-black" data-raw="' + esc(rep.name) + '">' + playerOptionsHtml('') + '</select></div>'; });
+                    html += '</div>';
+                }
+                if (alwaysSkipped) html += '<div style="color:#555;">' + alwaysSkipped + ' rep(s) set to always skip.</div>';
                 html += '<div class="flex gap-2 pt-1"><button id="monthlyConfirmBtn" class="btn-pixel !bg-green-500 !border-green-700">Confirm Upload</button><button id="monthlyCancelBtn" class="btn-pixel !bg-gray-500 !border-gray-700">Cancel</button></div>';
                 box.innerHTML = html; box.classList.remove('hidden');
-                pendingUpload = { period, results, totalXp, prior: priorInfo.prior, logRefs: priorInfo.logRefs };
+                pendingUpload = { period, results, totalXp, prior: priorInfo.prior, logDocs: priorInfo.logDocs, aliases: Object.assign({}, aliasPicks) };
+                box.querySelectorAll('.alias-pick').forEach(sel => sel.addEventListener('change', () => { if (sel.value) aliasPicks[sel.dataset.raw] = sel.value; else delete aliasPicks[sel.dataset.raw]; previewMonthlyUpload(true); }));
                 document.getElementById('monthlyConfirmBtn').addEventListener('click', commitMonthlyUpload);
-                document.getElementById('monthlyCancelBtn').addEventListener('click', () => { pendingUpload = null; box.classList.add('hidden'); });
+                document.getElementById('monthlyCancelBtn').addEventListener('click', () => { pendingUpload = null; aliasPicks = {}; box.classList.add('hidden'); });
             }
+            /* ── Most Improved: biggest % gain in uploaded XP vs last month, one per team ── */
+            const MOST_IMPROVED = { xp: 50, coins: 20, minPrevXp: 100 };
+            const prevMonthKey = mk => { const [y, m] = mk.split('-').map(Number); const d = new Date(y, m - 2, 1); return getMonthKey(d); };
+            const uploadedXpForMonth = (mem, mk) => Object.values(mem.uploadXp || {}).filter(u => u && u.month === mk).reduce((s, u) => s + (u.xp || 0), 0);
+            function applyMostImproved(gd, mk) {
+                if (!gd.mostImproved) gd.mostImproved = {};
+                const prevAwards = gd.mostImproved[mk] || {};
+                // Undo this month's earlier awards (re-uploads recalculate the winner).
+                Object.values(prevAwards).forEach(a => { const hit = findPlayer(gd, a.name); if (!hit) return; const mem = gd.teams[hit.key].members[hit.idx]; mem.xp = Math.max(0, (mem.xp || 0) - MOST_IMPROVED.xp); mem.coins = Math.max(0, (mem.coins || 0) - MOST_IMPROVED.coins); if (mem.monthlyXp) mem.monthlyXp[mk] = Math.max(0, (mem.monthlyXp[mk] || 0) - MOST_IMPROVED.xp); });
+                const pk = prevMonthKey(mk); const winners = {};
+                Object.entries(gd.teams).forEach(([key, team]) => {
+                    let best = null;
+                    (team.members || []).forEach(mem => {
+                        if (isTeamManager(team, mem)) return;
+                        const cur = uploadedXpForMonth(mem, mk), prev = uploadedXpForMonth(mem, pk);
+                        if (!cur || prev < MOST_IMPROVED.minPrevXp) return;
+                        const gain = (cur - prev) / prev;
+                        if (gain > 0 && (!best || gain > best.gain)) best = { name: mem.name, gain, prev, cur };
+                    });
+                    if (!best) return;
+                    const mem = team.members.find(m => m.name === best.name);
+                    mem.xp = (mem.xp || 0) + MOST_IMPROVED.xp; mem.coins = (mem.coins || 0) + MOST_IMPROVED.coins;
+                    if (!mem.monthlyXp) mem.monthlyXp = {}; mem.monthlyXp[mk] = (mem.monthlyXp[mk] || 0) + MOST_IMPROVED.xp;
+                    winners[key] = { name: best.name, gainPct: Math.round(best.gain * 100) };
+                });
+                gd.mostImproved[mk] = winners;
+                return winners;
+            }
+            /* ── Upload backups (saved automatically before every upload) ── */
+            const backupsCollection = collection(db, 'artifacts', appId, 'public', 'teamData', 'uploadBackups');
             async function commitMonthlyUpload() {
                 if (!pendingUpload) return; const p = pendingUpload; pendingUpload = null;
                 const box = document.getElementById('monthlyPreviewBox'); const period = p.period;
                 const by = state.currentUser ? state.currentUser.displayName : 'Admin';
                 const newByName = new Map(p.results.map(r => [r.name, r]));
+                let winners = {};
                 try {
+                    const before = await getDoc(dataDocRef); if (!before.exists()) throw new Error("No data.");
+                    const backupRef = await addDoc(backupsCollection, { createdAt: serverTimestamp(), label: period.label, periodKey: period.key, by, teams: before.data().teams, mostImproved: before.data().mostImproved || {}, nameAliases: before.data().nameAliases || {}, deletedLogs: p.logDocs.map(l => ({ details: l.details, timestamp: l.timestamp || null })), addedLogIds: [], restored: false });
                     const updated = await runTransaction(db, async tx => {
                         const snap = await tx.get(dataDocRef); if (!snap.exists()) throw new Error("No data.");
                         const gd = snap.data(); let count = 0;
@@ -3785,21 +3852,54 @@
                                 } else delete mem.uploadXp[period.key];
                             });
                         }
-                        const upd = { teams: recalculatePlayerStats(gd).teams }; if (sk.changed) upd.skills = sk.list;
+                        if (period.type === 'month') winners = applyMostImproved(gd, period.monthKey);
+                        const aliases = Object.assign({}, gd.nameAliases || {}, p.aliases);
+                        const upd = { teams: recalculatePlayerStats(gd).teams, nameAliases: aliases, mostImproved: gd.mostImproved || {} }; if (sk.changed) upd.skills = sk.list;
                         tx.update(dataDocRef, upd); return count;
                     });
                     // Swap the activity log entries for this period so charts and skill tallies match.
-                    for (let i = 0; i < p.logRefs.length; i += 400) { const b = writeBatch(db); p.logRefs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); }
-                    const tag = ' [period:' + period.key + ']';
-                    await addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + ' (' + period.label + '). Updated ' + updated + ' players, +' + p.totalXp + ' XP.' + tag, timestamp: Timestamp.fromDate(period.statsDate) });
-                    await Promise.all(p.results.map(r => addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + tag + ' for ' + r.name + ': ' + r.skills.map(s => s.count + 'x "' + s.name + '"').join(', ') + ' (+' + r.xp + ' XP)', timestamp: Timestamp.fromDate(period.statsDate) })));
+                    for (let i = 0; i < p.logDocs.length; i += 400) { const b = writeBatch(db); p.logDocs.slice(i, i + 400).forEach(l => b.delete(l.ref)); await b.commit(); }
+                    const tag = ' [period:' + period.key + ']'; const ts = Timestamp.fromDate(period.statsDate);
+                    const added = [];
+                    added.push(await addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + ' (' + period.label + '). Updated ' + updated + ' players, +' + p.totalXp + ' XP.' + tag, timestamp: ts }));
+                    added.push(...await Promise.all(p.results.map(r => addDoc(activityLogCollection, { details: 'CSV Upload by ' + by + tag + ' for ' + r.name + ': ' + r.skills.map(s => s.count + 'x "' + s.name + '"').join(', ') + ' (+' + r.xp + ' XP)', timestamp: ts }))));
+                    added.push(...await Promise.all(Object.entries(winners).map(([k, w]) => addDoc(activityLogCollection, { details: '🚀 Most Improved' + tag + ' for ' + w.name + ': up ' + w.gainPct + '% on ' + ((k.split('_')[1] || k).replace(/^./, c => c.toUpperCase())) + ' (+' + MOST_IMPROVED.xp + ' XP)', timestamp: ts }))));
+                    await updateDoc(backupRef, { addedLogIds: added.map(r => r.id) });
                     showNotification('✅ ' + period.label + ' uploaded! ' + updated + ' players, +' + p.totalXp.toLocaleString() + ' XP.', 'success');
                     addToTicker('📊 ' + period.label + ' stats are in! +' + p.totalXp.toLocaleString() + ' XP across the world!');
+                    Object.values(winners).forEach(w => addToTicker('🚀 Most Improved: ' + w.name + ' (up ' + w.gainPct + '%)!'));
                     const [yy, mm] = period.monthKey.split('-').map(Number);
                     state.chartFilter = 'month'; state.chartFilterMonth = mm - 1; state.chartFilterYear = yy;
                     state.lbFilter = period.monthKey; renderLbFilterBar(); if (state.selectedPlayerName) renderPlayerDashboard();
-                    box.classList.add('hidden'); document.getElementById('monthlyFileInput').value = '';
+                    box.classList.add('hidden'); document.getElementById('monthlyFileInput').value = ''; aliasPicks = {};
+                    renderBackupList();
                 } catch (err) { showNotification('Upload Error: ' + err.message, 'error'); console.error(err); }
+            }
+            async function renderBackupList() {
+                const wrap = document.getElementById('backupList'); if (!wrap) return;
+                try {
+                    const qs = await getDocs(query(backupsCollection, orderBy('createdAt', 'desc'), limit(10)));
+                    if (qs.empty) { wrap.innerHTML = '<p class="text-xs text-black">No backups yet. One is saved automatically before every upload.</p>'; return; }
+                    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                    wrap.innerHTML = qs.docs.map(d => { const b = d.data(); const when = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().toLocaleString() : 'just now'; return '<div class="flex flex-wrap justify-between items-center gap-2 text-xs text-black bg-white bg-opacity-60 p-2 rounded"><span>Before <b>' + esc(b.label || '') + '</b> upload · ' + esc(when) + ' · ' + esc(b.by || '') + (b.restored ? ' · <i>restored</i>' : '') + '</span><button class="btn-pixel !text-[0.5rem] !p-2 !bg-orange-500 !border-orange-700 restore-backup-btn" data-id="' + d.id + '">Restore</button></div>'; }).join('');
+                    wrap.querySelectorAll('.restore-backup-btn').forEach(btn => btn.addEventListener('click', () => {
+                        if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'Click again to confirm'; setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'Restore'; }, 5000); return; }
+                        restoreBackup(btn.dataset.id);
+                    }));
+                } catch (e) { console.error(e); wrap.innerHTML = '<p class="text-xs text-black">Could not load backups: ' + e.message + '</p>'; }
+            }
+            async function restoreBackup(id) {
+                try {
+                    const ref = doc(backupsCollection, id); const snap = await getDoc(ref); if (!snap.exists()) throw new Error('Backup not found.');
+                    const b = snap.data();
+                    await runTransaction(db, async tx => { const cur = await tx.get(dataDocRef); if (!cur.exists()) throw new Error('No data.'); tx.update(dataDocRef, { teams: b.teams, mostImproved: b.mostImproved || {}, nameAliases: b.nameAliases || {} }); });
+                    const ids = b.addedLogIds || [];
+                    for (let i = 0; i < ids.length; i += 400) { const wb = writeBatch(db); ids.slice(i, i + 400).forEach(lid => wb.delete(doc(activityLogCollection, lid))); await wb.commit(); }
+                    for (const l of (b.deletedLogs || [])) await addDoc(activityLogCollection, { details: l.details, timestamp: l.timestamp || serverTimestamp() });
+                    await updateDoc(ref, { restored: true });
+                    await addDoc(activityLogCollection, { details: '🛟 Restored backup from before the ' + (b.label || '') + ' upload', timestamp: serverTimestamp() });
+                    showNotification('Restored to before the ' + (b.label || '') + ' upload.', 'success'); renderBackupList();
+                } catch (e) { console.error(e); showNotification('Restore failed: ' + e.message, 'error'); }
             }
             function exportDataToCsv() {
                 if (!state.isDataReady) return; let csv = "Team,Player Name,XP,Level,Coins\r\n";
@@ -3839,14 +3939,14 @@
                 el.nameDropdown.addEventListener('change', e => { state.selectedPlayerName = e.target.value || null; checkAdminAccess(); renderPlayerSpecificContent(); });
                 el.skillsContainer.addEventListener('click', async e => { const btn = e.target.closest('.quick-add-btn'); if (btn) { playSound(el.coinSound); await logXpForPlayer(state.selectedPlayerName, [{ name: btn.dataset.skillName, xp: parseInt(btn.dataset.skillXp, 10), count: 1 }], 'Quick-add by ' + state.selectedPlayerName, new Date()); } });
                 el.adminModeBtn.addEventListener('click', () => { if (state.isAdmin) { state.isAdmin = false; el.adminModeBtn.textContent = 'Admin Mode'; el.adminModeBtn.classList.remove('!bg-green-500', '!border-green-700'); el.adminModeBtn.classList.add('!bg-red-500', '!border-red-700'); renderAdminPanel(); renderPlayerSpecificContent(); } else { enterAdminMode(); } });
-                function enterAdminMode() { if (!isCompanyUser(state.currentUser) || !isGlobalAdmin(state.currentUser.displayName, state.gameData.globalAdmins || [])) { showNotification('Admin access requires an admin @' + COMPANY_DOMAIN + ' account.', 'error'); return; } state.isAdmin = true; el.adminModeBtn.textContent = 'Exit Admin'; el.adminModeBtn.classList.add('!bg-green-500', '!border-green-700'); el.adminModeBtn.classList.remove('!bg-red-500', '!border-red-700'); attachLogListener(); renderAdminPanel(); renderPlayerSpecificContent(); }
+                function enterAdminMode() { if (!isCompanyUser(state.currentUser) || !isGlobalAdmin(state.currentUser.displayName, state.gameData.globalAdmins || [])) { showNotification('Admin access requires an admin @' + COMPANY_DOMAIN + ' account.', 'error'); return; } state.isAdmin = true; el.adminModeBtn.textContent = 'Exit Admin'; el.adminModeBtn.classList.add('!bg-green-500', '!border-green-700'); el.adminModeBtn.classList.remove('!bg-red-500', '!border-red-700'); attachLogListener(); renderAdminPanel(); renderPlayerSpecificContent(); renderBackupList(); }
                 el.adminTabBar.addEventListener('click', e => { const btn = e.target.closest('[data-tab]'); if (!btn) return; el.adminTabBar.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active'); el.adminTabContent.querySelectorAll('.admin-tab-pane').forEach(pane => pane.classList.toggle('hidden', pane.id !== 'tab-' + btn.dataset.tab)); if (btn.dataset.tab === 'spotlight') renderSpotlightAdminTab(); if (btn.dataset.tab === 'events') renderEventsAdminTab(); if (btn.dataset.tab === 'data') { const soSel = document.getElementById('seasonOverrideSelect'); if (soSel) soSel.value = state.gameData.seasonOverride || ''; } });
                 el.resetDataBtn.addEventListener('click', () => { const scope = state.currentView === 'overall' ? 'ALL TEAMS' : ((state.gameData.teams[state.currentView] ? state.gameData.teams[state.currentView].manager : state.currentView) + "'s Team"); el.resetConfirmText.textContent = 'Reset all XP for ' + scope + '? Cannot be undone.'; el.resetConfirmModal.style.display = 'flex'; });
                 el.confirmResetBtn.addEventListener('click', handleResetData);
                 el.cancelResetBtn.addEventListener('click', () => el.resetConfirmModal.style.display = 'none');
                 el.csvFileInput.addEventListener('change', () => { const file = el.csvFileInput.files[0]; if (!file) return; const match = file.name.match(/(\d{4}-\d{2}-\d{2})/); el.csvDateInput.value = match ? match[1] : new Date().toISOString().slice(0, 10); });
                 el.uploadCsvBtn.addEventListener('click', handleCsvUpload);
-                document.getElementById('monthlyPreviewBtn').addEventListener('click', previewMonthlyUpload);
+                document.getElementById('monthlyPreviewBtn').addEventListener('click', () => previewMonthlyUpload());
                 document.getElementById('uploadPeriodType').addEventListener('change', e => { const wk = e.target.value === 'week'; document.getElementById('monthlyMonthInput').classList.toggle('hidden', wk); document.getElementById('uploadWeekWrap').classList.toggle('hidden', !wk); });
                 (function () { const mi = document.getElementById('monthlyMonthInput'); if (mi && !mi.value) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); mi.value = getMonthKey(d); } })();
                 el.confirmCsvBtn.addEventListener('click', () => { el.csvConfirmModal.style.display = 'none'; processCsvFile(); });
