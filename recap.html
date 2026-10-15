@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monthly Recap</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body>
+<main class="wrap">
+  <nav class="topnav"><a href="./">🍄 Back to Super Service World</a><a href="how-xp.html">📖 How XP Works</a></nav>
+  <header class="hero">
+    <h1>📊 Monthly Recap</h1>
+    <p id="intro">Your month at a glance: XP, rank, bonuses, and where it came from.</p>
+  </header>
+
+  <div id="signedOut" class="card center" hidden>
+    <p>Sign in with your Custom Ink Google account to see recaps.</p>
+    <button id="signInBtn">Sign in with Google</button>
+  </div>
+
+  <div id="app" hidden>
+    <div class="controls">
+      <label>Player <select id="playerSel"></select></label>
+      <label>Month <select id="monthSel"></select></label>
+    </div>
+    <div id="recap"></div>
+  </div>
+  <p id="status" class="center" style="color:#fff;">Loading…</p>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, doc, getDoc, collection, query, where, getDocs, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCcD2zcmIt31yS-usRdp38LltgaqMVRm4I",
+    authDomain: "super-service-universe.firebaseapp.com",
+    projectId: "super-service-universe",
+    storageBucket: "super-service-universe.firebasestorage.app",
+    messagingSenderId: "597385586663",
+    appId: "1:597385586663:web:ef339e994fa11f2f7cbf42"
+  };
+  const COMPANY_DOMAIN = 'customink.com';
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app); const db = getFirestore(app);
+  const dataRef = doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'teamData');
+  const logsCol = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'teamData', 'activityLog');
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const normName = s => String(s || '').split('(')[0].trim().toLowerCase();
+  const isCompanyUser = u => !!(u && u.email && u.email.toLowerCase().endsWith('@' + COMPANY_DOMAIN));
+  const monthLabel = mk => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); };
+  const prevMonthKey = mk => { const [y, m] = mk.split('-').map(Number); const d = new Date(y, m - 2, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const teamName = key => (key.split('_')[1] || key).replace(/^./, c => c.toUpperCase());
+  const isManager = (team, m) => normName(m.name) === normName(team.manager);
+  const BONUS_ICONS = [[/^Quality Gold/, '🥇'], [/^Quality Silver/, '🥈'], [/^Quality Bronze/, '🥉'], [/^Clean Sheet/, '🧼'], [/^tNPS Beat Channel/, '💬']];
+
+  let gd = null; const logCache = {};
+
+  $('signInBtn').addEventListener('click', () => { const p = new GoogleAuthProvider(); p.setCustomParameters({ hd: COMPANY_DOMAIN, prompt: 'select_account' }); signInWithPopup(auth, p).catch(e => { $('status').textContent = 'Sign-in failed: ' + e.message; }); });
+
+  onAuthStateChanged(auth, async user => {
+    if (user && !isCompanyUser(user)) { await signOut(auth); $('status').textContent = 'Please use your @' + COMPANY_DOMAIN + ' account.'; $('signedOut').hidden = false; return; }
+    if (!user) { $('signedOut').hidden = false; $('app').hidden = true; $('status').textContent = ''; return; }
+    $('signedOut').hidden = true;
+    try {
+      const snap = await getDoc(dataRef); if (!snap.exists()) { $('status').textContent = 'No game data yet.'; return; }
+      gd = snap.data(); setupControls(user); $('app').hidden = false; $('status').textContent = ''; render();
+    } catch (e) { console.error(e); $('status').textContent = 'Could not load data: ' + e.message; }
+  });
+
+  function allMembers() { return Object.entries(gd.teams || {}).flatMap(([key, t]) => (t.members || []).map(m => ({ m, key, team: t }))); }
+
+  function setupControls(user) {
+    const members = allMembers().sort((a, b) => a.m.name.localeCompare(b.m.name));
+    $('playerSel').innerHTML = members.map(x => '<option value="' + esc(x.m.name) + '">' + esc(x.m.name) + '</option>').join('');
+    const me = members.find(x => normName(x.m.name) === normName(user.displayName));
+    if (me) $('playerSel').value = me.m.name;
+    const months = [...new Set(members.flatMap(x => Object.keys(x.m.monthlyXp || {})))].filter(k => /^\d{4}-\d{2}$/.test(k)).sort().reverse();
+    // Default to the most recent month that has uploaded stats.
+    const uploaded = [...new Set(members.flatMap(x => Object.values(x.m.uploadXp || {}).map(u => u && u.month)).filter(Boolean))].sort().reverse();
+    $('monthSel').innerHTML = months.map(k => '<option value="' + k + '">' + esc(monthLabel(k)) + '</option>').join('');
+    if (uploaded[0] && months.includes(uploaded[0])) $('monthSel').value = uploaded[0];
+    $('playerSel').addEventListener('change', render); $('monthSel').addEventListener('change', render);
+  }
+
+  // Rank among non-manager reps with XP that month (1 = best).
+  function rankIn(list, name, mk) {
+    const active = list.filter(x => !isManager(x.team, x.m) && ((x.m.monthlyXp || {})[mk] || 0) > 0).sort((a, b) => (b.m.monthlyXp[mk] || 0) - (a.m.monthlyXp[mk] || 0));
+    const i = active.findIndex(x => x.m.name === name); return { rank: i === -1 ? null : i + 1, of: active.length };
+  }
+  function teamAvgRanks(mk) {
+    return Object.entries(gd.teams || {}).map(([key, t]) => { const a = (t.members || []).filter(m => !isManager(t, m) && ((m.monthlyXp || {})[mk] || 0) > 0); return { key, avg: a.length ? a.reduce((s, m) => s + m.monthlyXp[mk], 0) / a.length : 0 }; }).sort((a, b) => b.avg - a.avg);
+  }
+  async function monthLogs(mk) {
+    if (logCache[mk]) return logCache[mk];
+    const [y, m] = mk.split('-').map(Number);
+    const qs = await getDocs(query(logsCol, where('timestamp', '>=', Timestamp.fromDate(new Date(y, m - 1, 1))), where('timestamp', '<', Timestamp.fromDate(new Date(y, m, 1)))));
+    return (logCache[mk] = qs.docs.map(d => d.data().details || ''));
+  }
+  const moveHtml = (now, before) => {
+    if (!now) return '<span class="flat">No rank</span>';
+    if (!before) return '<span class="flat">New this month</span>';
+    const d = before - now; return d > 0 ? '<span class="up">▲ ' + d + ' from #' + before + '</span>' : d < 0 ? '<span class="down">▼ ' + (-d) + ' from #' + before + '</span>' : '<span class="flat">Same as last month</span>';
+  };
+
+  async function render() {
+    const name = $('playerSel').value, mk = $('monthSel').value; if (!name || !mk) return;
+    const pk = prevMonthKey(mk); const all = allMembers(); const me = all.find(x => x.m.name === name); if (!me) return;
+    const xp = (me.m.monthlyXp || {})[mk] || 0, prevXp = (me.m.monthlyXp || {})[pk] || 0;
+    const teamList = all.filter(x => x.key === me.key);
+    const tr = rankIn(teamList, name, mk), trPrev = rankIn(teamList, name, pk);
+    const or = rankIn(all, name, mk), orPrev = rankIn(all, name, pk);
+    const tRanks = teamAvgRanks(mk); const myTeamPos = tRanks.findIndex(t => t.key === me.key) + 1;
+    const skillXp = Object.fromEntries((gd.skills || []).map(s => [s.name, s.xp]));
+
+    $('recap').innerHTML = '<p class="center" style="color:#fff;">Loading ' + esc(monthLabel(mk)) + '…</p>';
+    let logs = []; try { logs = await monthLogs(mk); } catch (e) { console.error(e); }
+    const mine = logs.filter(l => l.indexOf(' for ' + name + ':') !== -1);
+    const skills = {};
+    mine.filter(l => l.indexOf('CSV Upload by') === 0).forEach(l => { for (const m of l.matchAll(/(\d+)x "([^"]+)"/g)) skills[m[2]] = (skills[m[2]] || 0) + parseInt(m[1], 10); });
+    const skillRows = Object.entries(skills).map(([s, c]) => ({ s, c, xp: c * (skillXp[s] || 0) })).sort((a, b) => b.xp - a.xp);
+    const statsXp = skillRows.reduce((a, r) => a + r.xp, 0);
+    const bonuses = skillRows.filter(r => BONUS_ICONS.some(([re]) => re.test(r.s)));
+    const awards = logs.filter(l => (l.indexOf('🚀 Most Improved') === 0 && l.indexOf(' for ' + name + ':') !== -1) || (l.indexOf('⭐ Spotlight Award') === 0 && l.indexOf(name) !== -1));
+    const isMgr = isManager(me.team, me.m);
+    const chg = prevXp ? Math.round((xp - prevXp) / prevXp * 100) : null;
+
+    let h = '<section class="card"><h2>' + esc(name) + ' · ' + esc(monthLabel(mk)) + '</h2>';
+    if (isMgr) h += '<p class="note">👔 Managers aren\'t ranked or counted in team averages.</p>';
+    if (!xp) h += '<p class="note">💤 No XP recorded for this month yet.</p>';
+    h += '<div class="stats">';
+    h += '<div class="stat"><div class="label">Month XP</div><div class="value">' + xp.toLocaleString() + '</div><div class="sub">' + (chg === null ? '<span class="flat">No data last month</span>' : chg >= 0 ? '<span class="up">▲ ' + chg + '% vs ' + esc(monthLabel(pk).split(' ')[0]) + '</span>' : '<span class="down">▼ ' + (-chg) + '% vs ' + esc(monthLabel(pk).split(' ')[0]) + '</span>') + '</div></div>';
+    h += '<div class="stat"><div class="label">' + esc(teamName(me.key)) + ' rank</div><div class="value">' + (tr.rank ? '#' + tr.rank : '·') + '</div><div class="sub">' + (tr.rank ? 'of ' + tr.of + ' · ' : '') + moveHtml(tr.rank, trPrev.rank) + '</div></div>';
+    h += '<div class="stat"><div class="label">Overall rank</div><div class="value">' + (or.rank ? '#' + or.rank : '·') + '</div><div class="sub">' + (or.rank ? 'of ' + or.of + ' · ' : '') + moveHtml(or.rank, orPrev.rank) + '</div></div>';
+    h += '<div class="stat"><div class="label">Team standing</div><div class="value">#' + (myTeamPos || '·') + '</div><div class="sub">of ' + tRanks.length + ' teams (avg XP/rep)</div></div>';
+    h += '</div></section>';
+
+    h += '<section class="card"><h2>🏅 Bonuses & awards</h2>';
+    if (!bonuses.length && !awards.length) h += '<p class="muted">No bonuses this month. Check <a href="how-xp.html">How XP Works</a> for what\'s up for grabs.</p>';
+    else {
+      h += '<div class="chips">' + bonuses.map(b => '<span class="chip">' + (BONUS_ICONS.find(([re]) => re.test(b.s)) || ['', '🏅'])[1] + ' ' + esc(b.s) + ' +' + b.xp + '</span>').join('');
+      h += awards.map(a => { const x = a.match(/\(\+(\d+) XP\)/); return '<span class="chip">' + (a.indexOf('🚀') === 0 ? '🚀 Most Improved' : '⭐ Spotlight') + (x ? ' +' + x[1] : '') + '</span>'; }).join('') + '</div>';
+    }
+    h += '</section>';
+
+    if (skillRows.length) {
+      const top = skillRows[0];
+      h += '<section class="card"><h2>⚡ Where your XP came from</h2><p class="note" style="margin:0 0 10px;">Biggest source: <b>' + esc(top.s) + '</b> (' + Math.round(top.xp / Math.max(statsXp, 1) * 100) + '% of your stats XP)</p><table><thead><tr><th>Skill</th><th>Count</th><th>XP</th></tr></thead><tbody>';
+      skillRows.forEach(r => { const pct = Math.round(r.xp / Math.max(statsXp, 1) * 100); h += '<tr><td>' + esc(r.s) + '<div class="bar" style="margin-top:4px;"><span style="width:' + pct + '%"></span></div></td><td>' + r.c.toLocaleString() + '</td><td>' + r.xp.toLocaleString() + '</td></tr>'; });
+      h += '</tbody></table></section>';
+    }
+    $('recap').innerHTML = h;
+  }
+</script>
+</body>
+</html>
