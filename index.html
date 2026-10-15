@@ -3566,17 +3566,28 @@
             const MONTHLY_NAME_MAP = { "Matthew Harwood": "Matt Harwood", "Melissa McMaster": "Mel McMaster", "Alexander Williams": "Alex Williams", "Alexa Baeza": "Lexi Baeza", "Matthew Crossan": "Matt Crossan" };
             /* Scoring rules for dashboard-export uploads (approved Oct 2026) */
             const SCORING = {
-                accuracyThreshold: teamKey => teamKey === 'team_vesuvius' ? 98.25 : 98,
+                accuracyOffset: teamKey => teamKey === 'team_vesuvius' ? 0.25 : 0, // Vesuvius tiers sit 0.25 higher
+                qualityTiers: [ // highest first
+                    { min: 99.5, name: "Quality Gold (99.5%+)" },
+                    { min: 99, name: "Quality Silver (99%+)" },
+                    { min: 98, name: "Quality Bronze (98%+)" }
+                ],
                 tnpsMinSurveys: 3, // need at least this many surveys to qualify for the tNPS bonus
                 weeklyFactor: 0.25 // weekly uploads earn 1/4 of the monthly pace and quality bonus
             };
             const REQUIRED_SKILLS = [
                 { name: "Call/Chat Handled", xp: 1, tooltip: "Handling a customer call or chat." },
-                { name: "Email Responded To", xp: 1, tooltip: "Responding to a customer email." },
+                { name: "Emails Responded (per 2)", xp: 1, tooltip: "1 XP for every 2 customer emails (0.5 XP each)." },
                 { name: "Problem Touches", xp: 1, tooltip: "Each problem resolved." },
                 { name: "Pace (Contacts/FTE Day)", xp: 10, tooltip: "10 XP for every contact handled per day worked. Rewards pace, not attendance." },
-                { name: "Quality Bonus", xp: 100, tooltip: "Monthly accuracy at or above 98% (98.25% for Vesuvius)." },
-                { name: "Quality Bonus (Weekly)", xp: 25, tooltip: "Weekly accuracy at or above 98% (98.25% for Vesuvius)." },
+                { name: "Quality Gold (99.5%+)", xp: 150, tooltip: "Monthly accuracy 99.5%+ (99.75%+ for Vesuvius)." },
+                { name: "Quality Silver (99%+)", xp: 100, tooltip: "Monthly accuracy 99%+ (99.25%+ for Vesuvius)." },
+                { name: "Quality Bronze (98%+)", xp: 50, tooltip: "Monthly accuracy 98%+ (98.25%+ for Vesuvius)." },
+                { name: "Quality Gold (99.5%+) (Weekly)", xp: 38, tooltip: "Weekly accuracy 99.5%+ (99.75%+ for Vesuvius)." },
+                { name: "Quality Silver (99%+) (Weekly)", xp: 25, tooltip: "Weekly accuracy 99%+ (99.25%+ for Vesuvius)." },
+                { name: "Quality Bronze (98%+) (Weekly)", xp: 13, tooltip: "Weekly accuracy 98%+ (98.25%+ for Vesuvius)." },
+                { name: "Clean Sheet", xp: 50, tooltip: "Zero flags and zero external errors for the month." },
+                { name: "Clean Sheet (Weekly)", xp: 13, tooltip: "Zero flags and zero external errors for the week." },
                 { name: "tNPS Beat Channel", xp: 150, tooltip: "tNPS score above your channel's average for the month (min 3 surveys)." },
                 { name: "tNPS Beat Channel (Weekly)", xp: 40, tooltip: "tNPS score above your channel's average for the week (min 3 surveys)." }
             ];
@@ -3613,13 +3624,14 @@
                             chats: num(o['Interaction Detail Customer Chats Handled']),
                             emails: num(o['Interaction Detail Outbound SF Case Emails']),
                             problems: num(o['Order Action Detail Total Problems Resolved']),
-                            accuracy: numOrNull(o['Care Team Activity Accuracy %'])
+                            accuracy: numOrNull(o['Care Team Activity Accuracy %']),
+                            feedback: num(o['Care Team Activity Total Feedback'])
                         };
                     }
                 });
                 return Object.values(reps).map(r => {
                     const rows = Object.values(r.skills);
-                    const t = { contacts: 0, fteDays: 0, inbound: 0, outbound: 0, chats: 0, emails: 0, problems: 0 };
+                    const t = { contacts: 0, fteDays: 0, inbound: 0, outbound: 0, chats: 0, emails: 0, problems: 0, feedback: 0 };
                     rows.forEach(s => Object.keys(t).forEach(k => t[k] += s[k]));
                     // Accuracy across skills, weighted by contacts handled in each.
                     const acc = rows.filter(s => s.accuracy !== null);
@@ -3644,10 +3656,14 @@
             function buildUploadSkills(rep, survey, teamKey, isWeekly, channelTnps) {
                 const out = []; const f = isWeekly ? SCORING.weeklyFactor : 1;
                 const cc = rep.inbound + rep.outbound + rep.chats; if (cc > 0) out.push({ name: "Call/Chat Handled", count: cc });
-                if (rep.emails > 0) out.push({ name: "Email Responded To", count: rep.emails });
+                const emailPairs = Math.floor(rep.emails / 2); if (emailPairs > 0) out.push({ name: "Emails Responded (per 2)", count: emailPairs });
                 if (rep.problems > 0) out.push({ name: "Problem Touches", count: rep.problems });
                 const pace = Math.round(rep.contactsPerDay * f); if (rep.fteDays > 0 && pace > 0) out.push({ name: "Pace (Contacts/FTE Day)", count: pace });
-                if (rep.fteDays > 0 && rep.accuracy !== null && rep.accuracy >= SCORING.accuracyThreshold(teamKey)) out.push({ name: isWeekly ? "Quality Bonus (Weekly)" : "Quality Bonus", count: 1 });
+                if (rep.fteDays > 0 && rep.accuracy !== null) {
+                    const tier = SCORING.qualityTiers.find(q => rep.accuracy >= q.min + SCORING.accuracyOffset(teamKey));
+                    if (tier) out.push({ name: tier.name + (isWeekly ? ' (Weekly)' : ''), count: 1 });
+                }
+                if (rep.fteDays > 0 && rep.feedback === 0) out.push({ name: isWeekly ? "Clean Sheet (Weekly)" : "Clean Sheet", count: 1 });
                 const chScore = channelTnps ? channelTnps[rep.channel] : undefined;
                 if (survey && survey.responses >= SCORING.tnpsMinSurveys && survey.score !== null && chScore !== undefined && survey.score > chScore) out.push({ name: isWeekly ? "tNPS Beat Channel (Weekly)" : "tNPS Beat Channel", count: 1 });
                 return out;
