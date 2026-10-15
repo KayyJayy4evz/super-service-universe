@@ -1948,7 +1948,7 @@
                     </div>
                     <div id="tab-data" class="admin-tab-pane hidden space-y-4">
                         <h3 class="text-base text-black">📅 Stats Upload (Dashboard Export)</h3>
-                        <p class="text-xs text-black" style="line-height:1.8;">Pick monthly or weekly, set the period, then select the whole export at once. Only <b>breakdown_by_rep_2</b> (activity) and <b>breakdown_by_rep_1</b> (tNPS) are used; everything else is ignored. Re-uploading a period <b>replaces</b> its XP, it never stacks.</p>
+                        <p class="text-xs text-black" style="line-height:1.8;">Pick monthly or weekly, set the period, then select the whole export at once. Only <b>breakdown_by_rep_2</b> (activity), <b>breakdown_by_rep_1</b> (rep tNPS) and <b>breakdown_by_team_skill_1</b> (channel tNPS) are used; everything else is ignored. Re-uploading a period <b>replaces</b> its XP, it never stacks.</p>
                         <div class="flex flex-wrap items-center gap-3">
                             <select id="uploadPeriodType" class="bg-white text-black p-2 rounded border-2 border-black">
                                 <option value="month">Monthly</option>
@@ -3567,6 +3567,7 @@
             /* Scoring rules for dashboard-export uploads (approved Oct 2026) */
             const SCORING = {
                 accuracyThreshold: teamKey => teamKey === 'team_vesuvius' ? 98.25 : 98,
+                tnpsMinSurveys: 3, // need at least this many surveys to qualify for the tNPS bonus
                 weeklyFactor: 0.25 // weekly uploads earn 1/4 of the monthly pace and quality bonus
             };
             const REQUIRED_SKILLS = [
@@ -3576,8 +3577,8 @@
                 { name: "Pace (Contacts/FTE Day)", xp: 10, tooltip: "10 XP for every contact handled per day worked. Rewards pace, not attendance." },
                 { name: "Quality Bonus", xp: 100, tooltip: "Monthly accuracy at or above 98% (98.25% for Vesuvius)." },
                 { name: "Quality Bonus (Weekly)", xp: 25, tooltip: "Weekly accuracy at or above 98% (98.25% for Vesuvius)." },
-                { name: "WOW Feedback", xp: 10, tooltip: "Each promoter (9-10) tNPS survey." },
-                { name: "Passive Feedback", xp: 5, tooltip: "Each passive (7-8) tNPS survey. Detractors earn nothing." }
+                { name: "tNPS Beat Channel", xp: 150, tooltip: "tNPS score above your channel's average for the month (min 3 surveys)." },
+                { name: "tNPS Beat Channel (Weekly)", xp: 40, tooltip: "tNPS score above your channel's average for the week (min 3 surveys)." }
             ];
             const numOrNull = v => { const s = String(v == null ? '' : v).replace(/[,%\s]/g, ''); if (s === '') return null; const n = parseFloat(s); return isNaN(n) ? null : n; };
             const num = v => numOrNull(v) || 0;
@@ -3587,6 +3588,7 @@
                 const has = h => header.indexOf(h) !== -1;
                 if (has('Agent Employee Name') && has('Care Team Activity Handled Contacts')) return 'activity';
                 if (has('Employee Name') && has('Promoter Count')) return 'tnps';
+                if (has('Revenue Team Skill') && has('tNPS Score') && has('Response Count')) return 'tnpsChannel';
                 return null;
             }
             function rowsToObjects(rows) {
@@ -3624,18 +3626,30 @@
                     const w = acc.reduce((a, s) => a + s.contacts, 0);
                     const accuracy = !acc.length ? null : (w > 0 ? acc.reduce((a, s) => a + s.accuracy * s.contacts, 0) / w : acc.reduce((a, s) => a + s.accuracy, 0) / acc.length);
                     const contactsPerDay = t.fteDays > 0 ? t.contacts / t.fteDays : 0;
-                    return Object.assign({ name: r.name, crew: r.crew, accuracy, contactsPerDay }, t);
+                    // Main channel = the skill where the rep handled the most contacts.
+                    const channel = Object.entries(r.skills).sort((a, b) => b[1].contacts - a[1].contacts)[0][0];
+                    return Object.assign({ name: r.name, crew: r.crew, accuracy, contactsPerDay, channel }, t);
                 });
             }
-            function buildUploadSkills(rep, survey, teamKey, isWeekly) {
+            // Channel tNPS: from the skill-level file when included, otherwise rebuilt from rep surveys.
+            function buildChannelTnps(channelRows, repAgg, surveys) {
+                const out = {};
+                (channelRows || []).forEach(o => { const k = (o['Revenue Team Skill'] || '').trim(); const sc = numOrNull(o['tNPS Score']); if (k && sc !== null) out[k] = sc; });
+                if (Object.keys(out).length) return out;
+                const acc = {};
+                repAgg.forEach(r => { const sv = surveys[MONTHLY_NAME_MAP[r.name] || r.name]; if (!sv || !sv.responses) return; const a = acc[r.channel] || (acc[r.channel] = { p: 0, d: 0, n: 0 }); a.p += sv.promoters; a.d += sv.detractors; a.n += sv.responses; });
+                Object.entries(acc).forEach(([k, a]) => { out[k] = (a.p - a.d) / a.n * 100; });
+                return out;
+            }
+            function buildUploadSkills(rep, survey, teamKey, isWeekly, channelTnps) {
                 const out = []; const f = isWeekly ? SCORING.weeklyFactor : 1;
                 const cc = rep.inbound + rep.outbound + rep.chats; if (cc > 0) out.push({ name: "Call/Chat Handled", count: cc });
                 if (rep.emails > 0) out.push({ name: "Email Responded To", count: rep.emails });
                 if (rep.problems > 0) out.push({ name: "Problem Touches", count: rep.problems });
                 const pace = Math.round(rep.contactsPerDay * f); if (rep.fteDays > 0 && pace > 0) out.push({ name: "Pace (Contacts/FTE Day)", count: pace });
                 if (rep.fteDays > 0 && rep.accuracy !== null && rep.accuracy >= SCORING.accuracyThreshold(teamKey)) out.push({ name: isWeekly ? "Quality Bonus (Weekly)" : "Quality Bonus", count: 1 });
-                if (survey && survey.promoters > 0) out.push({ name: "WOW Feedback", count: survey.promoters });
-                if (survey && survey.passives > 0) out.push({ name: "Passive Feedback", count: survey.passives });
+                const chScore = channelTnps ? channelTnps[rep.channel] : undefined;
+                if (survey && survey.responses >= SCORING.tnpsMinSurveys && survey.score !== null && chScore !== undefined && survey.score > chScore) out.push({ name: isWeekly ? "tNPS Beat Channel (Weekly)" : "tNPS Beat Channel", count: 1 });
                 return out;
             }
             function findPlayer(gd, playerName) {
@@ -3690,21 +3704,23 @@
                 const box = document.getElementById('monthlyPreviewBox');
                 if (!files.length) { showNotification("Select the export files.", "error"); return; }
                 if (!period) { showNotification(document.getElementById('uploadPeriodType').value === 'week' ? "Pick the week-ending date." : "Pick the month these stats are for.", "error"); return; }
-                let activity = null, tnps = null; const ignored = [];
+                let activity = null, tnps = null, tnpsChannel = null; const ignored = [];
                 for (const f of files) {
-                    try { const rows = await parseFileToRows(f); const kind = classifyExportRows(rows); if (kind === 'activity') activity = rowsToObjects(rows); else if (kind === 'tnps') tnps = rowsToObjects(rows); else ignored.push(f.name); }
+                    try { const rows = await parseFileToRows(f); const kind = classifyExportRows(rows); if (kind === 'activity') activity = rowsToObjects(rows); else if (kind === 'tnps') tnps = rowsToObjects(rows); else if (kind === 'tnpsChannel') tnpsChannel = rowsToObjects(rows); else ignored.push(f.name); }
                     catch (e) { ignored.push(f.name + ' (unreadable)'); }
                 }
                 if (!activity) { showNotification("Couldn't find the rep activity file (breakdown_by_rep_2).", "error"); return; }
                 const surveys = {};
-                (tnps || []).forEach(o => { const n = (o['Employee Name'] || '').trim(); if (n) surveys[MONTHLY_NAME_MAP[n] || n] = { promoters: num(o['Promoter Count']), passives: num(o['Passive Count']) }; });
+                (tnps || []).forEach(o => { const n = (o['Employee Name'] || '').trim(); if (n) surveys[MONTHLY_NAME_MAP[n] || n] = { score: numOrNull(o['tNPS Score']), responses: num(o['Response Count']), promoters: num(o['Promoter Count']), detractors: num(o['Detractor Count']) }; });
+                const repAgg = aggregateActivity(activity);
+                const channelTnps = buildChannelTnps(tnpsChannel, repAgg, surveys);
                 const skillMap = new Map(ensureRequiredSkills(state.gameData.skills).list.map(s => [s.name, s.xp]));
                 const results = [], unmatched = [];
-                aggregateActivity(activity).forEach(rep => {
+                repAgg.forEach(rep => {
                     const playerName = MONTHLY_NAME_MAP[rep.name] || rep.name;
                     const hit = findPlayer(state.gameData, playerName);
                     if (!hit) { unmatched.push(rep.name + (rep.crew ? ' (' + rep.crew + ')' : '')); return; }
-                    const skills = buildUploadSkills(rep, surveys[playerName], hit.key, period.type === 'week');
+                    const skills = buildUploadSkills(rep, surveys[playerName], hit.key, period.type === 'week', channelTnps);
                     if (!skills.length) return;
                     const xp = skills.reduce((s, sk) => s + (skillMap.get(sk.name) || 0) * sk.count, 0);
                     results.push({ name: state.gameData.teams[hit.key].members[hit.idx].name, xp, skills });
@@ -3716,7 +3732,7 @@
                 const totalXp = results.reduce((s, r) => s + r.xp, 0);
                 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
                 let html = '<div><b>' + esc(period.label) + '</b>: ' + results.length + ' players, +' + totalXp.toLocaleString() + ' XP.</div>';
-                html += '<div>Files used: activity ✅ · tNPS ' + (tnps ? '✅' : '➖ not included (no WOW/Passive XP)') + (ignored.length ? ' · ' + ignored.length + ' other files ignored' : '') + '</div>';
+                html += '<div>Files used: activity ✅ · rep tNPS ' + (tnps ? '✅' : '➖ missing (no tNPS bonus)') + ' · channel tNPS ' + (tnpsChannel ? '✅' : (tnps ? '➖ rebuilt from rep surveys' : '➖')) + (ignored.length ? ' · ' + ignored.length + ' other files ignored' : '') + '</div>';
                 if (priorTotal > 0) html += '<div style="color:#92400e;"><b>♻️ Replacing earlier uploads:</b> ' + Object.keys(priorInfo.prior).length + ' players had ' + priorTotal.toLocaleString() + ' uploaded XP for this period. That XP is removed and swapped for the new totals (net ' + (totalXp - priorTotal >= 0 ? '+' : '') + (totalXp - priorTotal).toLocaleString() + ' XP). Spotlights, spins and manual awards are untouched.</div>';
                 if (priorInfo.weeklyInMonth) html += '<div style="color:#b91c1c;"><b>⚠️ Weekly uploads already exist inside ' + esc(period.label) + '.</b> A monthly upload on top of them would double count. Re-upload by week instead, or cancel.</div>';
                 html += '<div><b>Top 5:</b> ' + results.slice(0, 5).map(r => esc(r.name) + ' +' + r.xp.toLocaleString()).join(' · ') + '</div>';
